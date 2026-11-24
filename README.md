@@ -2,7 +2,7 @@
 
 Surface missing dependency evidence alongside explicit maintenance signals.
 
-**Status:** implemented browser-local research prototype. Automated tests can be reproduced with the command below. GitHub Pages deployed and browser smoke checks completed on 20 November 2026.
+**Status:** implemented browser-local research prototype. Automated tests can be reproduced with the command below. The existing Pages site previously passed smoke checks. The observation-age update is locally tested; its latest deployment and browser behavior have not been verified.
 
 ## Website
 
@@ -10,7 +10,7 @@ Live website: https://royalpuskar.github.io/dependency-weather/
 
 ## Problem and approach
 
-This tool makes the supplied developer tools scenario inspectable through explicit rules, per-item results, and exportable evidence. It runs the same pure JavaScript engine in the browser and Node tests. All input is provided by the user or the included synthetic fixture; no external facts are inferred.
+Dependency reviewers need to distinguish missing observations from outdated ones. A supplied zero-vulnerability count is not necessarily recent evidence. This tool reports observation age independently from release age and the supplied maintenance signals. It runs the same pure JavaScript engine in the browser and Node tests. All input is provided by the user or the included synthetic fixture; no external facts are inferred.
 
 ## Implemented features
 
@@ -63,6 +63,26 @@ Edit one value and select **Run analysis**. **Reset example** restores the fixtu
 
 Input is capped at 200,000 serialized characters, arrays processed by the engine at 500 elements, and numeric magnitudes at 1e12. Domain constraints are checked inside `engine.mjs`; unsupported structures return an error.
 
+## Observation freshness
+
+Optional package field `observedOn` records the calendar date on which the supplied package observations were collected. When present, root `asOf` is required. Both use exact valid YYYY-MM-DD dates, compared at UTC midnight. No system clock is consulted, so a saved scenario is reproducible.
+
+Optional root `maxEvidenceAgeDays` is a nonnegative integer, default 30. Configuring it also requires `asOf`. An observation exactly that many days old is within the window; older evidence is stale. Future observations relative to `asOf` are rejected. Missing/null observation dates are undated, even when other fields are populated.
+
+```json
+{"asOf":"2026-11-24","maxEvidenceAgeDays":0,"packages":[
+{"name":"example","ageDays":10,"license":"MIT","vulnerabilities":0,"observedOn":"2026-11-23"}
+]}
+```
+
+Expected result: evidence age 1 day, status stale, and the supplied vulnerability count still 0. This warns about evidence age without inventing vulnerabilities.
+
+Rows include `observedOn`, `evidenceAgeDays`, and `evidenceStatus` (undated, stale, or within-window). Metrics count stale and undated packages. The report records its reference date and evidence-window policy. Undated observations now contribute a signal, so fully populated legacy inputs without dates no longer produce “no configured signals.”
+
+The observation date applies to all supplied fields for that package. If fields were collected on different dates, this simplified model cannot represent that distinction. Release age remains the supplied value and is not automatically advanced. Within-window is not a claim of safety, authenticity, completeness, or live registry verification. The 30-day default is an illustrative review setting, not an industry standard.
+
+Package names are unique exact labels; combine records or use distinct version-qualified labels when necessary. Vulnerability counts must be nonnegative integers. License values must be text or absent; license labels are not validated as SPDX expressions.
+
 ## Architecture and request flow
 
 `index.html` loads `app.mjs`, which parses scenario JSON and calls `run` from `engine.mjs`. The engine returns `metrics` and `rows`; the UI renders values with `textContent`, never user-supplied HTML. Editing invalidates the prior report. Export creates a local Blob download.
@@ -77,7 +97,7 @@ The interface shares a portfolio design system, while this repository has its ow
 
 ## Validation
 
-Three local automated test cases passed on 20 November 2026. Live browser checks covered sample results, invalid-input errors, stale-export prevention, and reset. These checks do not establish exhaustive browser coverage.
+Nine local Node tests pass for this update. They cover window boundaries, stale zero-vulnerability observations, undated evidence, leap-day arithmetic, invalid/future dates, required reference dates, field validation, duplicate identities, deterministic results, and original fixture behavior. These are synthetic fixture results, not measurements of real dependency safety. Mobile, laptop, and 3840×2160 browser checks have not been performed for this update.
 
 `test.mjs` checks domain outcomes and edge cases, deterministic behavior, input preservation, malformed roots, and size limits. GitHub Actions runs the same suite. Review the tests themselves to see exactly what is covered; passing these checks does not establish security or exhaustive correctness.
 
@@ -93,3 +113,4 @@ Three local automated test cases passed on 20 November 2026. Live browser checks
 See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and [LICENSE](LICENSE).
 
 © 2026 Puskar (Royalpuskar). All rights reserved except permissions granted by the MIT license. Preserve applicable third-party notices.
+
