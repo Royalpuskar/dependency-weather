@@ -7,6 +7,34 @@ function bool(v){if(typeof v!=='boolean')throw Error('Expected a boolean');retur
 function date(v){if(typeof v!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(v))throw Error('Expected YYYY-MM-DD');const t=Date.parse(v+'T00:00:00Z');if(!Number.isFinite(t)||new Date(t).toISOString().slice(0,10)!==v)throw Error('Invalid calendar date');return t;}
 export function run(x){obj(x);if(JSON.stringify(x).length>200000)throw Error('Input exceeds 200 KB limit');
 
-const rows=arr(x.packages,'packages').map(p=>{str(p.name);const signals=[];if(p.ageDays==null)signals.push('release age unknown');else{num(p.ageDays,'age',0);if(p.ageDays>365)signals.push('release older than 365 days');}if(p.vulnerabilities==null)signals.push('vulnerability data unknown');else{num(p.vulnerabilities,'vulnerabilities',0);if(p.vulnerabilities>0)signals.push('reported vulnerabilities: '+p.vulnerabilities);}if(!p.license)signals.push('license unknown');return {name:p.name,releaseAge:p.ageDays??'unknown',license:p.license||'unknown',vulnerabilities:p.vulnerabilities??'unknown',signals:signals.join('; ')||'no configured signals'};});return {metrics:{packages:rows.length,withSignals:rows.filter(r=>r.signals!=='no configured signals').length},rows};
-
+const asOf = x.asOf === undefined ? null : date(x.asOf);
+const maxAge = x.maxEvidenceAgeDays === undefined ? 30 : num(x.maxEvidenceAgeDays,'evidence age limit',0);
+if(!Number.isInteger(maxAge))throw Error('Evidence age limit must be an integer');
+if(asOf===null && x.maxEvidenceAgeDays!==undefined)throw Error('asOf is required for an evidence age limit');
+const names=new Set();
+const rows=arr(x.packages,'packages').map(p=>{
+ obj(p);str(p.name);if(names.has(p.name))throw Error('Duplicate package name');names.add(p.name);
+ const signals=[];
+ if(p.ageDays==null)signals.push('release age unknown');
+ else {num(p.ageDays,'age',0);if(p.ageDays>365)signals.push('release older than 365 days');}
+ if(p.vulnerabilities==null)signals.push('vulnerability data unknown');
+ else {num(p.vulnerabilities,'vulnerabilities',0);if(!Number.isInteger(p.vulnerabilities))throw Error('Vulnerability count must be an integer');if(p.vulnerabilities>0)signals.push('reported vulnerabilities: '+p.vulnerabilities);}
+ const license=p.license==null||p.license===''?null:str(p.license);
+ if(license===null)signals.push('license unknown');
+ let evidenceAgeDays=null,evidenceStatus='undated';
+ if(p.observedOn!=null){
+  const observed=date(p.observedOn);
+  if(asOf===null)throw Error('asOf is required when observedOn is supplied');
+  if(observed>asOf)throw Error('Observation date cannot be after asOf');
+  evidenceAgeDays=(asOf-observed)/86400000;
+  evidenceStatus=evidenceAgeDays>maxAge?'stale':'within-window';
+ }
+ if(evidenceStatus==='undated')signals.push('observation date unknown');
+ if(evidenceStatus==='stale')signals.push('observation older than evidence window');
+ return {name:p.name,releaseAge:p.ageDays??'unknown',license:license??'unknown',vulnerabilities:p.vulnerabilities??'unknown',
+  observedOn:p.observedOn??null,evidenceAgeDays,evidenceStatus,signals:signals.join('; ')||'no configured signals'};
+});
+return {metrics:{packages:rows.length,withSignals:rows.filter(r=>r.signals!=='no configured signals').length,
+ staleEvidence:rows.filter(r=>r.evidenceStatus==='stale').length,undatedEvidence:rows.filter(r=>r.evidenceStatus==='undated').length},rows,
+ policy:{asOf:x.asOf??null,maxEvidenceAgeDays:maxAge}};
 }
